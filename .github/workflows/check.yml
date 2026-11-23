@@ -1,0 +1,124 @@
+name: Build and check Hailwire
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HAILSTONE_SDK_REVISION: 3ddd5c61c89429efedc9c8b2a4c3cc404b731834
+  HAILWIRE_VERSION: 0.1.0
+
+jobs:
+  relay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test Discord relay
+        working-directory: relay
+        run: npm test
+
+  native:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x64
+            configure: -A x64
+          - os: ubuntu-22.04
+            platform: linux-x64
+            configure: -DCURL_NO_CURL_CMAKE=ON -DCURL_INCLUDE_DIR=/usr/include/x86_64-linux-gnu -DCURL_LIBRARY=/usr/lib/x86_64-linux-gnu/libcurl.so
+          - os: macos-15
+            platform: macos-arm64
+            configure: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 -DCMAKE_IGNORE_PREFIX_PATH=/opt/homebrew
+    env:
+      HAILWIRE_RELAY_URL: ${{ vars.HAILWIRE_RELAY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: projecthailstone/hailstone-client
+          ref: ${{ env.HAILSTONE_SDK_REVISION }}
+          path: sdk-source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install system HTTPS development headers and Lua test interpreter
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev lua5.4
+      - name: Configure
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DHAILSTONE_SDK_DIR=sdk-source/sdk -DHAILWIRE_RELAY_URL="$HAILWIRE_RELAY_URL" ${{ matrix.configure }}
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Stage installation
+        run: cmake --install build --config Release --prefix stage
+      - name: Check Linux architecture and libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          file stage/hailwire/hailwire.so | grep 'ELF 64-bit.*x86-64'
+          dependencies=$(ldd stage/hailwire/hailwire.so)
+          printf '%s\n' "$dependencies"
+          if grep -q 'not found' <<< "$dependencies"; then exit 1; fi
+      - name: Check and ad-hoc sign the macOS library
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          library=stage/hailwire/hailwire.dylib
+          test "$(lipo -archs "$library")" = arm64
+          codesign --force --sign - --timestamp=none "$library"
+          codesign --verify --strict "$library"
+          otool -L "$library"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hailwire-stage-${{ matrix.platform }}
+          path: stage/hailwire/
+          if-no-files-found: error
+          retention-days: 3
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: [relay, native]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: projecthailstone/hailstone-client
+          ref: ${{ env.HAILSTONE_SDK_REVISION }}
+          path: sdk-source
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hailwire-stage-*
+          path: platforms
+      - name: Package with the Hailstone manifest tool
+        run: >-
+          python3 sdk-source/tools/make_addon.py
+          --name hailwire --kind plugin --version "$HAILWIRE_VERSION" --min-client 0.7.2-beta
+          --author Fryguy --description 'Forward incoming EverQuest tells to your Discord DMs.'
+          --caps read,commands,events,ui,net
+          --platform windows-x64=platforms/hailwire-stage-windows-x64
+          --platform linux-x64=platforms/hailwire-stage-linux-x64
+          --platform macos-arm64=platforms/hailwire-stage-macos-arm64
+          --out release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hailwire-${{ env.HAILWIRE_VERSION }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14

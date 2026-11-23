@@ -1,0 +1,3 @@
+#pragma once
+
+#define HAILWIRE_RELAY_URL "@HAILWIRE_RELAY_URL@"

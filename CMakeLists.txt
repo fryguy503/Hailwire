@@ -1,0 +1,90 @@
+cmake_minimum_required(VERSION 3.22)
+project(hailwire VERSION 0.1.0 LANGUAGES CXX)
+
+include(CTest)
+find_package(Threads REQUIRED)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+set(HAILSTONE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../hailstone-client/sdk" CACHE PATH
+    "Path to the public Hailstone SDK")
+set(HAILWIRE_RELAY_URL "" CACHE STRING "Default HTTPS relay URL for new installs")
+if(NOT EXISTS "${HAILSTONE_SDK_DIR}/hailstone_plugin.h")
+  message(FATAL_ERROR "Set HAILSTONE_SDK_DIR to the public Hailstone client's sdk directory")
+endif()
+if(NOT HAILWIRE_RELAY_URL STREQUAL "" AND NOT HAILWIRE_RELAY_URL MATCHES "^https://[a-zA-Z0-9.-]+(:[0-9]+)?/?$")
+  message(FATAL_ERROR "HAILWIRE_RELAY_URL must be an HTTPS origin such as https://relay.example.com")
+endif()
+configure_file(cmake/hailwire_build_config.h.in generated/hailwire_build_config.h @ONLY)
+
+function(hailwire_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endfunction()
+
+add_library(hailwire_transport STATIC src/transport.cpp)
+set_target_properties(hailwire_transport PROPERTIES
+  POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+target_include_directories(hailwire_transport PUBLIC src)
+target_include_directories(hailwire_transport SYSTEM PRIVATE vendor)
+target_link_libraries(hailwire_transport PRIVATE Threads::Threads)
+if(WIN32)
+  target_link_libraries(hailwire_transport PRIVATE winhttp)
+else()
+  find_package(CURL REQUIRED)
+  target_link_libraries(hailwire_transport PRIVATE CURL::libcurl)
+endif()
+hailwire_warnings(hailwire_transport)
+
+add_library(hailwire SHARED src/plugin.cpp src/tell.cpp)
+set_target_properties(hailwire PROPERTIES
+  PREFIX "" CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+target_include_directories(hailwire PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(hailwire SYSTEM PRIVATE "${HAILSTONE_SDK_DIR}" vendor)
+target_link_libraries(hailwire PRIVATE hailwire_transport)
+hailwire_warnings(hailwire)
+
+install(TARGETS hailwire LIBRARY DESTINATION hailwire RUNTIME DESTINATION hailwire)
+install(DIRECTORY ui DESTINATION hailwire)
+install(FILES LICENSE DESTINATION hailwire RENAME LICENSE.txt)
+install(FILES THIRD_PARTY.md DESTINATION hailwire RENAME NOTICE.txt)
+
+if(BUILD_TESTING)
+  add_executable(hailwire_tell_test tests/tell_test.cpp src/tell.cpp)
+  target_include_directories(hailwire_tell_test PRIVATE src)
+  hailwire_warnings(hailwire_tell_test)
+  add_test(NAME hailwire_tell COMMAND hailwire_tell_test)
+
+  add_executable(hailwire_transport_test tests/transport_test.cpp)
+  target_include_directories(hailwire_transport_test SYSTEM PRIVATE vendor)
+  target_link_libraries(hailwire_transport_test PRIVATE hailwire_transport Threads::Threads)
+  hailwire_warnings(hailwire_transport_test)
+  add_test(NAME hailwire_transport COMMAND hailwire_transport_test)
+
+  find_program(HAILWIRE_NODE node)
+  if(HAILWIRE_NODE)
+    add_test(NAME hailwire_transport_http COMMAND "${HAILWIRE_NODE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/transport_fixture.mjs" $<TARGET_FILE:hailwire_transport_test>)
+    set_tests_properties(hailwire_transport_http PROPERTIES TIMEOUT 25)
+
+    add_executable(hailwire_addon_test tests/addon_test.cpp)
+    target_include_directories(hailwire_addon_test SYSTEM PRIVATE "${HAILSTONE_SDK_DIR}" vendor)
+    target_link_libraries(hailwire_addon_test PRIVATE hailwire Threads::Threads)
+    hailwire_warnings(hailwire_addon_test)
+    add_test(NAME hailwire_addon_http COMMAND "${HAILWIRE_NODE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/addon_fixture.mjs" $<TARGET_FILE:hailwire_addon_test>)
+    set_tests_properties(hailwire_addon_http PROPERTIES TIMEOUT 40)
+  endif()
+
+  find_program(HAILWIRE_LUA NAMES lua5.4 lua54 lua)
+  if(HAILWIRE_LUA)
+    add_test(NAME hailwire_panel COMMAND "${HAILWIRE_LUA}" tests/panel_test.lua)
+    set_tests_properties(hailwire_panel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 10)
+  endif()
+endif()

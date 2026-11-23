@@ -1,0 +1,12 @@
+/build*/
+/dist/
+/release/
+/stage/
+/sdk-source/
+/platforms/
+/data/
+/relay/node_modules/
+/relay/data/
+.env
+.env.*
+!.env.example
