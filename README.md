@@ -4,7 +4,7 @@ Hailwire sends incoming EverQuest tells from Hailstone to a private Discord bot 
 
 ## Set up Hailwire in game
 
-1. Install **Hailwire** from **Add-ons** in Hailstone 0.7.2-beta or newer, using the release link from your relay operator. For a local build, copy the staged `hailwire` folder into `plugins/` in your Hailstone player-data folder. Keep the `ui/` folder beside the plugin library.
+1. Open **Add-ons** in Hailstone 0.7.2-beta or newer. Under **Install from a link**, enter `fryguy503/Hailwire`, select **Look**, then install Hailwire. For a local build, copy the staged `hailwire` folder into `plugins/` in your Hailstone player-data folder. Keep the `ui/` folder beside the plugin library.
 2. Sign in to a character and type `/hailwire`. If needed, load the add-on first with `/plugin hailwire`. If Hailwire asks for a relay address, paste the HTTPS address from your operator, such as `https://relay.example.com`, and save it. Choose **Link Discord**.
 3. In the Discord server that hosts Hailwire, choose `/hailwire link` and paste the panel’s pairing code into the `code` field. Discord sends a private test DM. Return to Hailstone once it arrives.
 4. Turn on forwarding for the current character, or enable the default for all characters and override it from individual characters. Use **Send test DM** to check delivery at any time.
@@ -74,6 +74,6 @@ Omit `-A x64` with single-architecture generators like Ninja. The staged plug-in
 python ../hailstone-client/tools/make_addon.py --name hailwire --kind plugin --version 0.1.0 --min-client 0.7.2-beta --author Fryguy --description 'Forward incoming EverQuest tells to your Discord DMs.' --caps read,commands,events,ui,net --platform windows-x64=stage/hailwire --out release
 ```
 
-CI builds Windows x64, Linux x64, and macOS arm64 add-on packages. Set the `HAILWIRE_RELAY_URL` Actions variable to include your relay address in those builds. Attach the ZIP and `hailstone-addon.txt` together when publishing. Sign the manifest with your Hailstone add-on signing key for clients configured to require signatures.
+CI builds Windows x64, Linux x64, and macOS arm64 add-on packages. Set the `HAILWIRE_RELAY_URL` Actions variable to include your relay address in those builds. Keep `hailstone-addon.txt` and the ZIPs it references together in the repository root when publishing from `main`. A GitHub release can serve the same files as release assets. Sign the manifest with your Hailstone add-on signing key for clients configured to require signatures.
 
 The released Hailstone ABI exposes formatted chat. Hailwire recognizes standard English player tell formats, including language annotations and qualified sender names. Custom or localized formats may require a parser update.

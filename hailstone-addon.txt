@@ -1,0 +1,11 @@
+hailstone-addon 1
+name hailwire
+kind plugin
+version 0.1.0
+min_client 0.7.2-beta
+author Fryguy
+description Forward incoming EverQuest tells to your Discord DMs.
+caps read,commands,events,ui,net
+package windows-x64 231021 38bd67b1d8229f6bc8abd89bcf2997603e98c626eb025efb63d1efff3b82716c hailwire-0.1.0-windows-x64.zip
+package linux-x64 121722 61e3f671f0d44b6292cbf9bd98b5cfdb7638a190d8d40bab114b053747475fed hailwire-0.1.0-linux-x64.zip
+package macos-arm64 103017 33543edc91adede1e880f816c39bfc678969c535585a7b6c7dc6002641ca02dd hailwire-0.1.0-macos-arm64.zip
